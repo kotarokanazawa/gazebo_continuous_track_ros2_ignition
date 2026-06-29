@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<sdf version="1.8">
+  <plugin name="gazebo_continuous_track_ros2_ignition::IgnitionContinuousTrackSimple" filename="libIgnitionContinuousTrackSimple.so">
+    <track_name type="string">continuous_track</track_name>
+    <sprocket>
+      <joint required="1" type="string">sprocket_axle</joint>
+      <pitch_diameter required="1" type="double">0.24</pitch_diameter>
+    </sprocket>
+    <track>
+      <segment required="1" type="string">
+        <joint required="1" type="string">track_straight_segment_joint0</joint>
+        <pitch_diameter type="double">0.24</pitch_diameter>
+      </segment>
+    </track>
+    <velocity_deadband type="double">0.02</velocity_deadband>
+  </plugin>
+</sdf>

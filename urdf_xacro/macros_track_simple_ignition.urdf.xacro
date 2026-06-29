@@ -1,0 +1,87 @@
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <xacro:include filename="macros_common_ignition.urdf.xacro" />
+
+    <xacro:macro name="make_track_simple_ignition_plugin" params="name sprocket_joint:=^ pitch_diameter:=^ velocity_deadband:=^|0.02 translation_period:=^|0">
+        <gazebo>
+            <plugin name="gazebo_continuous_track_ros2_ignition::IgnitionContinuousTrackSimple" filename="libIgnitionContinuousTrackSimple.so">
+                <track_name>${name}</track_name>
+                <sprocket>
+                    <joint>${sprocket_joint}</joint>
+                    <pitch_diameter>${pitch_diameter}</pitch_diameter>
+                </sprocket>
+                <track>
+                    <segment>
+                        <joint>${name}_straight_segment_joint0</joint>
+                        <translation_period>${translation_period}</translation_period>
+                    </segment>
+                    <segment>
+                        <joint>${name}_arc_segment_joint0</joint>
+                        <pitch_diameter>${pitch_diameter}</pitch_diameter>
+                    </segment>
+                    <segment>
+                        <joint>${name}_straight_segment_joint1</joint>
+                        <translation_period>${translation_period}</translation_period>
+                    </segment>
+                    <segment>
+                        <joint>${name}_arc_segment_joint1</joint>
+                        <pitch_diameter>${pitch_diameter}</pitch_diameter>
+                    </segment>
+                </track>
+                <velocity_deadband>${velocity_deadband}</velocity_deadband>
+            </plugin>
+        </gazebo>
+    </xacro:macro>
+
+    <xacro:macro name="populate_arc_segments_for_simple_ignition_plugin" params="name_prefix:=^ pitch_diameter:=^ i:=0 count=^">
+        <xacro:if value="${i &lt; count}">
+            <segment>
+                <joint>${name_prefix}${i}</joint>
+                <pitch_diameter>${pitch_diameter}</pitch_diameter>
+            </segment>
+            <xacro:populate_arc_segments_for_simple_ignition_plugin i="${i + 1}" />
+        </xacro:if>
+    </xacro:macro>
+
+    <xacro:macro name="make_track_simple_ignition_plugin_wheels" params="name sprocket_joint:=^ pitch_diameter:=^ count:=^ velocity_deadband:=^|0.02">
+        <gazebo>
+            <plugin name="gazebo_continuous_track_ros2_ignition::IgnitionContinuousTrackSimple" filename="libIgnitionContinuousTrackSimple.so">
+                <track_name>${name}</track_name>
+                <sprocket>
+                    <joint>${sprocket_joint}</joint>
+                    <pitch_diameter>${pitch_diameter}</pitch_diameter>
+                </sprocket>
+                <track>
+                    <xacro:populate_arc_segments_for_simple_ignition_plugin name_prefix="${name}_wheel_joint" />
+                </track>
+                <velocity_deadband>${velocity_deadband}</velocity_deadband>
+            </plugin>
+        </gazebo>
+    </xacro:macro>
+
+    <xacro:macro name="make_track_simple_ignition" params="name x:=^|0 y:=^|0 z:=^|0 roll:=^|0 pitch:=^|0 yaw:=^|0 mass:=^ length:=^ radius:=^ width:=^ parent:=^ sprocket_joint:=^ pitch_diameter:=^ mu:=^|0.5 min_depth:=^|0.01 implicit_spring_damper:=^|1 enable_plugin:=^|true velocity_deadband:=^|0.02 grouser_count:=^|0 grouser_height:=^|0.02 grouser_width:=^|0.02 *material">
+        <xacro:property name="animation_pitch" value="${(2 * length + 2 * pi * radius) / max(grouser_count, 40)}" />
+        <xacro:property name="straight_grouser_count" value="${max(1, int(round(length / animation_pitch))) if grouser_count > 0 else 0}" />
+        <xacro:property name="arc_grouser_count" value="${max(1, int(round(2 * pi * radius / animation_pitch))) if grouser_count > 0 else 0}" />
+        <xacro:populate_straight_segments name_prefix="${name}_straight_segment" x="${x - length / 2}" z="${z + radius}" dx="${length}" dz="${-2 * radius}" dpitch="${pi}" mass="${mass / 4}" size_x="${length}" size_y="${width}" size_z="${radius}" grouser_count="${straight_grouser_count}" grouser_height="${grouser_height}" grouser_width="${grouser_width}" grouser_pitch="${animation_pitch}" count="2">
+            <xacro:insert_block name="material" />
+        </xacro:populate_straight_segments>
+        <xacro:populate_arc_segments name_prefix="${name}_arc_segment" x="${x + length / 2}" z="${z + radius}" dx="${-length}" dz="${-2 * radius}" dpitch="${pi}" mass="${mass / 4}" length="${width}" radius="${radius}" grouser_count="${arc_grouser_count}" grouser_height="${grouser_height}" grouser_width="${grouser_width}" grouser_pitch="${animation_pitch}" count="2">
+            <xacro:insert_block name="material" />
+        </xacro:populate_arc_segments>
+        <xacro:if value="${enable_plugin}">
+            <xacro:make_track_simple_ignition_plugin name="${name}" translation_period="${animation_pitch}" />
+        </xacro:if>
+    </xacro:macro>
+
+    <xacro:macro name="make_track_simple_ignition_wheels" params="name x:=^|0 y:=^|0 z:=^|0 roll:=^|0 pitch:=^|0 yaw:=^|0 mass:=^ length:=^ radius:=^ width:=^ parent:=^ sprocket_joint:=^ pitch_diameter:=^ mu:=^|0.5 min_depth:=^|0.01 implicit_spring_damper:=^|1 enable_plugin:=^|true velocity_deadband:=^|0.02 grouser_count:=^|0 grouser_height:=^|0.02 grouser_width:=^|0.02 *material count:=^">
+        <xacro:property name="wheel_grouser_pitch" value="${2 * pi * radius / max(grouser_count, 8)}" />
+        <xacro:populate_arc_segments name_prefix="${name}_wheel" x="${x + length / 2}"  z="${z + radius}" dx="${-length / max(count - 1, 1)}" mass="${mass / count}" length="${width}" radius="${radius}" grouser_count="${grouser_count}" grouser_height="${grouser_height}" grouser_width="${grouser_width}" grouser_pitch="${wheel_grouser_pitch}">
+            <xacro:insert_block name="material" />
+        </xacro:populate_arc_segments>
+        <xacro:if value="${enable_plugin}">
+            <xacro:make_track_simple_ignition_plugin_wheels name="${name}" />
+        </xacro:if>
+    </xacro:macro>
+
+</robot>
