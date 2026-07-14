@@ -81,7 +81,7 @@ and you want Ignition Gazebo to drive those joints from a sprocket speed.
 | `track/segment` | yes | One or more joints to drive from the sprocket. |
 | `track/segment/joint` | yes | Existing prismatic or revolute joint. |
 | `track/segment/pitch_diameter` | required for revolute joints | Pitch diameter for a rotational segment. Omit for prismatic segments. |
-| `track/segment/translation_period` | no | Wrap period in meters for a prismatic segment. Use the repeated grouser or tread pitch when the straight segment should cycle visually. |
+| `track/segment/translation_period` | no | Wrap period in meters for a prismatic segment. The joint position is kept in the centred range `[-period/2, period/2)`. Use the repeated grouser or tread pitch when the straight segment should cycle visually. |
 | `velocity_deadband` | no | Sprocket velocity threshold below which the track is treated as stopped. Default is `0.02`. |
 
 ## Xacro Macros

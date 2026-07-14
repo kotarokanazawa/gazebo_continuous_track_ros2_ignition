@@ -38,6 +38,10 @@ public:
   gz::Entity sprocket_joint{gz::kNullEntity};
   double sprocket_pitch_diameter{0.0};
   double velocity_deadband{0.02};
+  bool update_segments{true};
+  double update_period{0.0};
+  double accumulated_time{0.0};
+  std::string segment_mode{"all"};
   std::vector<SegmentCommand> segments;
 
   gz::Entity jointByName(gz::EntityComponentManager &_ecm, const std::string &_name) const
@@ -86,11 +90,15 @@ public:
     if (_period <= 1e-9) {
       return _position;
     }
-    _position = std::fmod(_position, _period);
+    // Keep the straight belt section centred on its nominal joint position.
+    // Wrapping to [0, period) lets a collision-bearing link move by almost a
+    // full tread pitch away from the modelled position.  The centred interval
+    // limits that displacement to half a pitch in either direction.
+    _position = std::fmod(_position + 0.5 * _period, _period);
     if (_position < 0.0) {
       _position += _period;
     }
-    return _position;
+    return _position - 0.5 * _period;
   }
 };
 
@@ -135,6 +143,10 @@ void IgnitionContinuousTrackSimple::Configure(
   }
 
   this->data_->velocity_deadband = _sdf->Get<double>("velocity_deadband", 0.02).first;
+  this->data_->update_segments = _sdf->Get<bool>("update_segments", true).first;
+  const double update_rate = _sdf->Get<double>("update_rate", 0.0).first;
+  this->data_->update_period = update_rate > 0.0 ? 1.0 / update_rate : 0.0;
+  this->data_->segment_mode = _sdf->Get<std::string>("segment_mode", "all").first;
 
   if (!sdf->HasElement("track")) {
     ignerr << "[" << this->data_->plugin_name << "] missing <track> element" << std::endl;
@@ -156,6 +168,9 @@ void IgnitionContinuousTrackSimple::Configure(
     SegmentCommand segment;
     segment.joint = joint;
     if (IgnitionContinuousTrackSimplePrivate::isLikelyRotationalSegment(segment_elem)) {
+      if (this->data_->segment_mode == "straight_only") {
+        continue;
+      }
       const auto diameter = segment_elem->Get<double>("pitch_diameter", 0.0).first;
       if (diameter <= 0.0) {
         ignerr << "[" << this->data_->plugin_name << "] invalid segment pitch_diameter: "
@@ -165,7 +180,11 @@ void IgnitionContinuousTrackSimple::Configure(
       segment.sprocket_to_segment = this->data_->sprocket_pitch_diameter / diameter;
       segment.reset_position = false;
     } else {
-      segment.sprocket_to_segment = this->data_->sprocket_pitch_diameter / 2.0;
+      if (this->data_->segment_mode == "arc_only") {
+        continue;
+      }
+      segment.sprocket_to_segment = segment_elem->Get<double>(
+        "translation_radius", this->data_->sprocket_pitch_diameter / 2.0).first;
       segment.translation_period = segment_elem->Get<double>("translation_period", 0.0).first;
       segment.reset_position = true;
     }
@@ -184,7 +203,17 @@ void IgnitionContinuousTrackSimple::PreUpdate(
     return;
   }
 
-  const double dt = std::chrono::duration<double>(_info.dt).count();
+  if (!this->data_->update_segments) {
+    return;
+  }
+
+  this->data_->accumulated_time += std::chrono::duration<double>(_info.dt).count();
+  const bool update_position = this->data_->update_period <= 0.0 ||
+    this->data_->accumulated_time + 1e-12 >= this->data_->update_period;
+  const double position_dt = update_position ? this->data_->accumulated_time : 0.0;
+  if (update_position) {
+    this->data_->accumulated_time = 0.0;
+  }
 
   double sprocket_vel =
     IgnitionContinuousTrackSimplePrivate::jointVelocity(_ecm, this->data_->sprocket_joint);
@@ -197,11 +226,20 @@ void IgnitionContinuousTrackSimple::PreUpdate(
       continue;
     }
     const double segment_vel = sprocket_vel * segment.sprocket_to_segment;
-    if (segment.reset_position) {
-      segment.position = IgnitionContinuousTrackSimplePrivate::wrappedTranslation(
-        segment.position + segment_vel * dt, segment.translation_period);
-      IgnitionContinuousTrackSimplePrivate::resetJointPosition(
-        _ecm, segment.joint, segment.position);
+    if (segment.reset_position && update_position) {
+      const double unwrapped_position = segment.position + segment_vel * position_dt;
+      const double wrapped_position = IgnitionContinuousTrackSimplePrivate::wrappedTranslation(
+        unwrapped_position, segment.translation_period);
+
+      // JointPositionReset teleports the collision-bearing segment.  Issuing it
+      // every physics step overrides the contact solver and can kick / snag the
+      // crawler while a grouser is loaded.  The repeated tread geometry only
+      // needs a reset when it crosses one complete element pitch.
+      if (std::abs(unwrapped_position - wrapped_position) > 1e-9) {
+        IgnitionContinuousTrackSimplePrivate::resetJointPosition(
+          _ecm, segment.joint, wrapped_position);
+      }
+      segment.position = wrapped_position;
     }
     IgnitionContinuousTrackSimplePrivate::setJointVelocity(
       _ecm, segment.joint, segment_vel);
